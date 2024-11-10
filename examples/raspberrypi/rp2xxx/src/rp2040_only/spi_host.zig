@@ -36,7 +36,8 @@ pub fn main() !void {
         .clock_config = rp2xxx.clock_config,
         .data_width = .eight,
     });
-    var out_buf_eight: [BUF_LEN]u8 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
+    var out_buf_eight: [BUF_LEN]u8 = .{ 'h', 'e', 'l', 'o' } ** (BUF_LEN / 4);
+    // var out_buf_eight: [BUF_LEN]u8 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
     var in_buf_eight: [BUF_LEN]u8 = undefined;
     csn.put(0);
     spi.transceive_blocking(u8, &out_buf_eight, &in_buf_eight);
@@ -47,7 +48,8 @@ pub fn main() !void {
         .clock_config = rp2xxx.clock_config,
         .data_width = .twelve,
     });
-    var out_buf_twelve: [BUF_LEN]u12 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
+    // var out_buf_twelve: [BUF_LEN]u12 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
+    var out_buf_twelve: [BUF_LEN]u12 = .{ 'h', 'e', 'l', 'o' } ** (BUF_LEN / 4);
     var in_buf_twelve: [BUF_LEN]u12 = undefined;
     csn.put(0);
     spi.transceive_blocking(u12, &out_buf_twelve, &in_buf_twelve);
