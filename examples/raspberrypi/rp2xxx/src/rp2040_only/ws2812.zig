@@ -155,22 +155,13 @@ pub fn main() void {
         first_colour = (first_colour + 1) % colours.len;
 
         // Wait for interrupt from PIO indicating it's done
-        while (get_irq_regs(irq).*.status.raw & (1 << 8) != 0) {}
+        while (pio.get_irq_regs(irq).*.status.raw & (1 << 8) != 0) {}
         // TODO: Had to write this function and hardcode pio0
         // while (*get_irq_regs(pio, irq).status) {}
         dma_ch.trigger_transfer(@intFromPtr(addr), @intFromPtr(&led_buffer), LED_COUNT, dma_config);
 
         rp2xxx.time.sleep_ms(250);
     }
-}
-
-fn get_irq_regs(irq: Irq) *volatile Irq.Regs {
-    // fn get_irq_regs(self: Pio, irq: Irq) *volatile Irq.Regs {
-    const PIO0 = microzig.chip.peripherals.PIO0;
-    const pio_regs = PIO0;
-    // const pio_regs = self.get_regs();
-    const irq_regs = @as(*volatile [2]Irq.Regs, @ptrCast(&pio_regs.IRQ0_INTE));
-    return &irq_regs[@intFromEnum(irq)];
 }
 
 fn sm_set_consecutive_pindirs(_pio: Pio, _sm: StateMachine, pin: u5, count: u3, is_out: bool) void {
