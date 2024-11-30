@@ -6,55 +6,27 @@ const time = rp2xxx.time;
 const gpio = rp2xxx.gpio;
 
 const BUF_LEN = 0x100;
-const spi = rp2xxx.spi.instance.SPI0;
+const spi = rp2xxx.spi.instance.SPI1;
+
+const led = gpio.num(25);
+// >>UART logging
+const uart = rp2xxx.uart.instance.num(1);
+const baud_rate = 115200;
+const uart_tx_pin = gpio.num(4);
+const uart_rx_pin = gpio.num(5);
+// <<UART logging
 
 // These will change depending on which GPIO pins you have your SPI device routed to.
 const CS_PIN = 1;
 const SCK_PIN = 2;
-// -- Since this is the slave device, pins are swapped.
-const MOSI_PIN = 4;
+// -- Since this is the slave device, we read on MISO_PIN
+const MOSI_PIN = 0;
 const MISO_PIN = 3;
 
-// >>CDC stuff
-const usb = rp2xxx.usb;
-const usb_config_len = usb.templates.config_descriptor_len + usb.templates.cdc_descriptor_len;
-const usb_config_descriptor =
-    usb.templates.config_descriptor(1, 2, 0, usb_config_len, 0xc0, 100) ++
-    usb.templates.cdc_descriptor(0, 4, usb.Endpoint.to_address(1, .In), 8, usb.Endpoint.to_address(2, .Out), usb.Endpoint.to_address(2, .In), 64);
-
-var driver_cdc = usb.cdc.CdcClassDriver{};
-var drivers = [_]usb.types.UsbClassDriver{driver_cdc.driver()};
-
-// This is our device configuration
-pub var DEVICE_CONFIGURATION: usb.DeviceConfiguration = .{
-    .device_descriptor = &.{
-        .descriptor_type = usb.DescType.Device,
-        .bcd_usb = 0x0200,
-        .device_class = 0xEF,
-        .device_subclass = 2,
-        .device_protocol = 1,
-        .max_packet_size0 = 64,
-        .vendor = 0x2E8A,
-        .product = 0x000a,
-        .bcd_device = 0x0100,
-        .manufacturer_s = 1,
-        .product_s = 2,
-        .serial_s = 0,
-        .num_configurations = 1,
-    },
-    .config_descriptor = &usb_config_descriptor,
-    .lang_descriptor = "\x04\x03\x09\x04", // length || string descriptor (0x03) || Engl (0x0409)
-    .descriptor_strings = &.{
-        &usb.utils.utf8ToUtf16Le("Raspberry Pi"),
-        &usb.utils.utf8ToUtf16Le("Pico Test Device"),
-        &usb.utils.utf8ToUtf16Le("someserial"),
-        &usb.utils.utf8ToUtf16Le("Board CDC"),
-    },
-    .drivers = &drivers,
-};
-// <<CDC stuff
-
 pub fn main() !void {
+    led.set_function(.sio);
+    led.set_direction(.out);
+    led.put(1);
     // Set pin functions for CS, SCK, MOSI, MISO
     const csn = gpio.num(CS_PIN);
     const mosi = gpio.num(MOSI_PIN);
@@ -64,34 +36,41 @@ pub fn main() !void {
         pin.set_function(.spi);
     }
 
-    rp2xxx.usb.Usb.init_clk();
-    rp2xxx.usb.Usb.init_device(&DEVICE_CONFIGURATION) catch unreachable;
-    var old: u64 = time.get_time_since_boot().to_us();
-    var new: u64 = 0;
-
-    var i: u32 = 0;
-    var buf: [1024]u8 = undefined;
-    while (true) {
-        // You can now poll for USB events
-        rp2xxx.usb.Usb.task(
-            false, // debug output over UART [Y/n]
-        ) catch unreachable;
-
-        new = time.get_time_since_boot().to_us();
-        if (new - old > 500000) {
-            old = new;
-            i += 1;
-            // const text = std.fmt.bufPrint(&buf, "cdc test: {}\r\n", .{i}) catch &.{};
-            driver_cdc.write("Hello!\r\n");
-            // driver_cdc.write(text);
-        }
+    // >>UART logging
+    inline for (&.{ uart_tx_pin, uart_rx_pin }) |pin| {
+        pin.set_function(.uart);
     }
-    var in_buf_eight: [BUF_LEN]u8 = undefined;
-    // TODO: Wait on CS low
-    spi.read_blocking(u8, 0, &in_buf_eight);
+    uart.apply(.{
+        .baud_rate = baud_rate,
+        .clock_config = rp2xxx.clock_config,
+    });
 
+    rp2xxx.uart.init_logger(uart);
+    // <<UART logging
+
+    try uart.write_blocking("Setting SPI as slave device\r\n", null); // DELETEME
+    spi.set_slave(true);
+
+    // Back to 8 bit mode
+    try spi.apply(.{
+        .clock_config = rp2xxx.clock_config,
+        .data_width = .eight,
+    });
+    var buf: [1024]u8 = undefined;
+    var in_buf_eight: [BUF_LEN]u8 = undefined;
+    try uart.write_blocking("Waiting!\r\n", null);
+    // while (true) {
+    //     const x = csn.read();
+    //     led.put(x);
+    // }
+    // TODO: Wait on CS low
+    // This doesn't wait at all..
+    spi.read_blocking(u8, 0, &in_buf_eight);
+    led.put(0);
+
+    // std.log.info("Got: {any}\r\n", .{in_buf_eight});
     var text = std.fmt.bufPrint(&buf, "Got: {any}\r\n", .{in_buf_eight}) catch &.{};
-    driver_cdc.write(text);
+    try uart.write_blocking(text, null);
 
     // 12 bit data words
     try spi.apply(.{
@@ -101,19 +80,21 @@ pub fn main() !void {
     var in_buf_twelve: [BUF_LEN]u12 = undefined;
     // TODO: Wait on CS low
     spi.read_blocking(u12, 0, &in_buf_twelve);
+    // std.log.info("Got: {any}\r\n", .{in_buf_twelve});
     text = std.fmt.bufPrint(&buf, "Got: {any}\r\n", .{in_buf_twelve}) catch &.{};
-    driver_cdc.write(text);
+    try uart.write_blocking(text, null);
 
     // Back to 8 bit mode
     try spi.apply(.{
         .clock_config = rp2xxx.clock_config,
         .data_width = .eight,
     });
+
     while (true) {
         // TODO: Wait on CS low
         spi.read_blocking(u8, 0, &in_buf_eight);
         text = std.fmt.bufPrint(&buf, "Got: {any}\r\n", .{in_buf_eight}) catch &.{};
-        driver_cdc.write(text);
-        time.sleep_ms(1 * 1000);
+        std.log.info("Got: {any}\r\n", .{in_buf_eight});
+        try uart.write_blocking(text, null);
     }
 }

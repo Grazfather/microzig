@@ -9,10 +9,14 @@ const peripherals = microzig.chip.peripherals;
 
 const BUF_LEN = 0x100;
 const spi = rp2xxx.spi.instance.SPI0;
+const led = gpio.num(14);
 
 // Communicate with another RP2040 over spi
 // No device implementation yet in Zig, see Rpi Pico SDK for an example: https://github.com/raspberrypi/pico-examples/blob/master/spi/spi_master_slave/spi_slave/spi_slave.c
 pub fn main() !void {
+    led.set_function(.sio);
+    led.set_direction(.out);
+    led.put(1);
 
     // Note that CSN pin is manually controlled here rather than by the SPI peripheral.
     // If CSN is configured to "SPI" function, it will get toggled after every data packet by the RP2040's
@@ -38,22 +42,22 @@ pub fn main() !void {
     });
     var out_buf_eight: [BUF_LEN]u8 = .{ 'h', 'e', 'l', 'o' } ** (BUF_LEN / 4);
     // var out_buf_eight: [BUF_LEN]u8 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
-    var in_buf_eight: [BUF_LEN]u8 = undefined;
+    // var in_buf_eight: [BUF_LEN]u8 = undefined;
     csn.put(0);
-    spi.transceive_blocking(u8, &out_buf_eight, &in_buf_eight);
+    spi.write_blocking(u8, &out_buf_eight);
     csn.put(1);
 
-    // 12 bit data words
-    try spi.apply(.{
-        .clock_config = rp2xxx.clock_config,
-        .data_width = .twelve,
-    });
-    // var out_buf_twelve: [BUF_LEN]u12 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
-    var out_buf_twelve: [BUF_LEN]u12 = .{ 'h', 'e', 'l', 'o' } ** (BUF_LEN / 4);
-    var in_buf_twelve: [BUF_LEN]u12 = undefined;
-    csn.put(0);
-    spi.transceive_blocking(u12, &out_buf_twelve, &in_buf_twelve);
-    csn.put(1);
+    // // 12 bit data words
+    // try spi.apply(.{
+    //     .clock_config = rp2xxx.clock_config,
+    //     .data_width = .twelve,
+    // });
+    // // var out_buf_twelve: [BUF_LEN]u12 = .{ 0xAA, 0xBB, 0xCC, 0xDD } ** (BUF_LEN / 4);
+    // var out_buf_twelve: [BUF_LEN]u12 = .{ 'h', 'e', 'l', 'o' } ** (BUF_LEN / 4);
+    // var in_buf_twelve: [BUF_LEN]u12 = undefined;
+    // csn.put(0);
+    // spi.transceive_blocking(u12, &out_buf_twelve, &in_buf_twelve);
+    // csn.put(1);
 
     // Back to 8 bit mode
     try spi.apply(.{
@@ -61,9 +65,12 @@ pub fn main() !void {
         .data_width = .eight,
     });
     while (true) {
+        led.put(1);
         csn.put(0);
-        spi.transceive_blocking(u8, &out_buf_eight, &in_buf_eight);
+        spi.write_blocking(u8, &out_buf_eight);
+        time.sleep_ms(1 * 500);
         csn.put(1);
-        time.sleep_ms(1 * 1000);
+        led.put(0);
+        time.sleep_ms(1 * 500);
     }
 }
